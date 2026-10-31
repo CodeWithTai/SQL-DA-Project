@@ -4,7 +4,7 @@ What's the realistic entry point?
 -Answer:
 Find the salary range,
 most common titles,
-and top requested skills specifically for postings that mention "no degree required"
+and top requested skills specifically for postings where no degree requirement is mentioned (Google Jobs' "No degree mentioned" tag)
 */
 
 
