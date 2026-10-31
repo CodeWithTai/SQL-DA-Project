@@ -1,10 +1,13 @@
-/* Question 1:
-    What's the realistic entry point?
+/* Question 2:
+    Does mentioning health insurance correlate with pay?
+    Note: job_health_insurance = TRUE means the posting MENTIONS health insurance.
+    FALSE means it doesn't mention it, not that the job has no health insurance.
 */
 SELECT
     job_title_short AS job_title,
     job_health_insurance,
-    COUNT(job_id) AS num_postings,
+    COUNT(salary_year_avg) AS postings_with_salary,
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary_year_avg)::numeric, 0) AS median_salary,
     ROUND(AVG(salary_year_avg), 0) AS avg_salary,
     MIN(salary_year_avg) AS min_salary,
     MAX(salary_year_avg) AS max_salary
@@ -19,28 +22,9 @@ GROUP BY
 ORDER BY
     job_health_insurance DESC;
 
-/* Insights:
-1. Postings mentioning health insurance pay ~$2,912 more on average
-2. Slightly more postings don't mention insurance (3,141 vs 2,322) — worth noting that a meaningful chunk of Data Analyst postings simply don't disclose or offer this benefit at all.
-3. The $650K max sits in the "no insurance" group
-4. A ~3% gap is small enough to call roughly "no strong relationship"
-
-
-[
-  {
-    "job_title": "Data Analyst",
-    "job_health_insurance": true,
-    "num_postings": "2322",
-    "avg_salary": "95550",
-    "min_salary": "25000.0",
-    "max_salary": "375000.0"
-  },
-  {
-    "job_title": "Data Analyst",
-    "job_health_insurance": false,
-    "num_postings": "3141",
-    "avg_salary": "92638",
-    "min_salary": "25920.0",
-    "max_salary": "650000.0"
-  }
-] */
+/* Notes (results run 2026-10-30):
+1. Mentions health insurance: 2,322 postings with salary, median $90,000, average $95,550.
+   Doesn't mention it:        3,141 postings with salary, median $90,000, average $92,638.
+2. The averages differ by $2,912 (about 3%), but the medians are the same. No clear pay difference.
+3. The $650K max is in the "doesn't mention" group.
+*/

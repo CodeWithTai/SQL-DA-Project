@@ -1,1 +1,6 @@
 /json
+*.csv
+.DS_Store
+__MACOSX/
+.vscode/
+*.session.sql

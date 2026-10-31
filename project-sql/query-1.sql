@@ -1,10 +1,10 @@
 /*
 -Question:
-What's the realistic entry point? 
+What's the realistic entry point?
 -Answer:
-Find the salary range, 
-most common titles, 
-and top requested skills specifically for postings that mention "no degree required" 
+Find the salary range,
+most common titles,
+and top requested skills specifically for postings that mention "no degree required"
 */
 
 
@@ -17,13 +17,25 @@ WHERE job_title_short = 'Data Analyst'
 -- Salary range
 SELECT
     job_title_short AS job_title,
+    COUNT(job_id) AS num_postings,
+    COUNT(salary_year_avg) AS postings_with_salary,
     MIN(salary_year_avg) AS min_salary,
     MAX(salary_year_avg) AS max_salary,
-    AVG(salary_year_avg) AS avg_salary,
-    COUNT(job_id) AS num_postings
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary_year_avg)::numeric, 0) AS median_salary,
+    ROUND(AVG(salary_year_avg), 0) AS avg_salary
 FROM no_degree_da_jobs
-WHERE salary_year_avg IS NOT NULL
 GROUP BY job_title_short;
+
+-- No-degree postings vs all other Data Analyst postings
+SELECT
+    CASE WHEN job_no_degree_mention IS TRUE THEN 'No degree mentioned' ELSE 'All other' END AS posting_group,
+    COUNT(job_id) AS num_postings,
+    COUNT(salary_year_avg) AS postings_with_salary,
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary_year_avg)::numeric, 0) AS median_salary,
+    ROUND(AVG(salary_year_avg), 0) AS avg_salary
+FROM job_postings_fact
+WHERE job_title_short = 'Data Analyst'
+GROUP BY posting_group;
 
 -- Most common titles
 SELECT
@@ -39,45 +51,22 @@ LIMIT 10;
 SELECT
     no_degree_da_jobs.job_title_short,
     skills_dim.skills AS skill_name,
-    COUNT(skills_job_dim.job_id) AS skill_count
+    COUNT(skills_job_dim.job_id) AS skill_count,
+    ROUND(COUNT(skills_job_dim.job_id) * 100.0 / (SELECT COUNT(*) FROM no_degree_da_jobs), 1) AS pct_of_postings
 FROM no_degree_da_jobs
 INNER JOIN skills_job_dim ON no_degree_da_jobs.job_id = skills_job_dim.job_id
 INNER JOIN skills_dim ON skills_job_dim.skill_id = skills_dim.skill_id
 GROUP BY no_degree_da_jobs.job_title_short, skills_dim.skills
 ORDER BY skill_count DESC
 LIMIT 10;
-/* Insights:
-Insights worth writing up:
-1. ~$93K average is a genuinely solid entry point. No-degree-required roles aren't a "consolation prize" — the average nearly matches typical market-wide Data Analyst salary figures. That's a strong, counter-narrative finding for your portfolio: the data doesn't support "no degree = lower pay" as a blanket rule.
-2. The top requested skills are a mix of technical and soft skills, which is consistent with the broader Data Analyst role. This suggests that even without a degree, candidates are expected to have a well-rounded skill set.
-3. The most common titles are all variations of Data Analyst, which indicates that the market recognizes the role consistently, even for those without a degree. This could be a point to highlight in your portfolio: the job market is valuing skills and experience over formal education in this case.
-4. The number of postings (1,200) is a significant sample size, which adds credibility to the findings. It shows that there is a substantial market for no-degree-required Data Analyst roles, which could be encouraging for job seekers in this category.
-5. The salary range (from $50K to $150K) shows that there is a wide spectrum of opportunities available, which could be useful for job seekers to understand the potential for growth and advancement in this field, even without a degree.
 
-[
-  {
-    "min_salary": "26444.0",
-    "max_salary": "650000.0",
-    "avg_salary": "92950.926144695591",
-    "num_postings": "1236"}
-  {"job_title": "Data Analyst", "posting_count": "18603"},
-  {"job_title": "Business Data Analyst", "posting_count": "1023"},
-  {"job_title": "Data analyst", "posting_count": "825"},
-  {"job_title": "Junior Data Analyst", "posting_count": "800"},
-  {"job_title": "Data Analyst (m/w/d)", "posting_count": "440"},
-  {"job_title": "Marketing Data Analyst", "posting_count": "410"},
-  {"job_title": "Lead Data Analyst", "posting_count": "397"},
-  {"job_title": "Data Architect", "posting_count": "389"},
-  {"job_title": "Financial Data Analyst", "posting_count": "276"},
-  {"job_title": "Data Quality Analyst", "posting_count": "264"}
-  {"skill_name": "sql", "skill_count": "31980"},
-  {"skill_name": "excel", "skill_count": "20549"},
-  {"skill_name": "python", "skill_count": "17327"},
-  {"skill_name": "tableau", "skill_count": "14103"},
-  {"skill_name": "power bi", "skill_count": "13450"},
-  {"skill_name": "r", "skill_count": "7348"},
-  {"skill_name": "sas", "skill_count": "6146"},
-  {"skill_name": "azure", "skill_count": "4143"},
-  {"skill_name": "sap", "skill_count": "3643"},
-  {"skill_name": "aws", "skill_count": "3235"}
-] */
+/* Notes (results run 2026-10-30):
+1. 76,057 of 196,593 Data Analyst postings (38.7%) mention no degree. Only 1,236 of them (1.6%) list a salary.
+2. Median salary is the same for both groups: $90,000 for no-degree postings (n=1,236 with salary)
+   and $90,000 for all other postings (n=4,227). Averages: $92,951 vs $94,146.
+3. Salary range for no-degree postings: $26,444 to $650,000. The $650K value is likely an outlier.
+4. Most titles are generic "Data Analyst" (18,603), but "Lead Data Analyst" (397) and "Data Architect" (389)
+   are also in the top 10, so these postings are not only junior roles.
+5. Top skills (% of no-degree postings): SQL 42.0%, Excel 27.0%, Python 22.8%, Tableau 18.5%, Power BI 17.7%.
+6. job_no_degree_mention only says what the posting text says. It does not tell us who actually gets hired.
+*/

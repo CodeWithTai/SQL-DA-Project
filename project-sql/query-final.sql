@@ -2,18 +2,33 @@
 Optimal skills for beginners — which skills give the best return (high demand + not gated to senior-sounding titles)
 */
 
+-- Filter check: how many Data Analyst postings each seniority word removes.
+-- Whole-word match (\m ... \M) so "CSR", "Staffordshire", "Headquartered" or "Directory" are not removed.
+SELECT
+    seniority_word,
+    COUNT(*) AS postings_excluded
+FROM
+    job_postings_fact
+CROSS JOIN (VALUES ('senior'), ('sr'), ('lead'), ('leader'), ('teamlead'), ('principal'), ('staff'), ('manager'), ('head'), ('director')) AS words(seniority_word)
+WHERE
+    job_title_short = 'Data Analyst'
+    AND job_title ~* ('\m' || seniority_word || '\M')
+GROUP BY
+    seniority_word
+ORDER BY
+    postings_excluded DESC;
+
+-- Entry-level skills: demand counts ALL entry-level postings, salary stats use only postings with a salary
 WITH entry_level_postings AS (
     SELECT
         job_id,
-        job_title_short
+        job_title_short,
+        salary_year_avg
     FROM
         job_postings_fact
     WHERE
         job_title_short = 'Data Analyst'
-        AND job_title NOT ILIKE '%senior%'
-        AND job_title NOT ILIKE '%lead%'
-        AND job_title NOT ILIKE '%principal%'
-        AND job_title NOT ILIKE '%staff%'
+        AND job_title !~* '\m(senior|sr|lead|leader|teamlead|principal|staff|manager|head|director)\M'
 ),
 
 skill_stats AS (
@@ -21,17 +36,15 @@ skill_stats AS (
         entry_level_postings.job_title_short,
         skills_dim.skills AS skill_name,
         COUNT(skills_job_dim.job_id) AS demand_count,
-        ROUND(AVG(job_postings_fact.salary_year_avg), 0) AS avg_salary
+        COUNT(entry_level_postings.salary_year_avg) AS postings_with_salary,
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY entry_level_postings.salary_year_avg)::numeric, 0) AS median_salary,
+        ROUND(AVG(entry_level_postings.salary_year_avg), 0) AS avg_salary
     FROM
         entry_level_postings
     INNER JOIN skills_job_dim
         ON entry_level_postings.job_id = skills_job_dim.job_id
     INNER JOIN skills_dim
         ON skills_job_dim.skill_id = skills_dim.skill_id
-    INNER JOIN job_postings_fact
-        ON entry_level_postings.job_id = job_postings_fact.job_id
-    WHERE
-        job_postings_fact.salary_year_avg IS NOT NULL
     GROUP BY
         entry_level_postings.job_title_short,
         skills_dim.skills
@@ -41,112 +54,54 @@ SELECT
     job_title_short AS job_title,
     skill_name,
     demand_count,
-    avg_salary
+    ROUND(demand_count * 100.0 / (SELECT COUNT(*) FROM entry_level_postings), 1) AS pct_of_postings,
+    postings_with_salary,
+    -- salaries are only compared when at least 30 postings list one
+    CASE WHEN postings_with_salary >= 30 THEN median_salary END AS median_salary,
+    CASE WHEN postings_with_salary >= 30 THEN avg_salary END AS avg_salary
 FROM
     skill_stats
-WHERE
-    demand_count > 100
 ORDER BY
-    demand_count DESC,
-    avg_salary DESC
+    demand_count DESC
 LIMIT 15;
 
+-- Baseline: top 15 skills for ALL Data Analyst postings (no filter)
+SELECT
+    skills_dim.skills AS skill_name,
+    COUNT(skills_job_dim.job_id) AS demand_count,
+    ROUND(COUNT(skills_job_dim.job_id) * 100.0 / (SELECT COUNT(*) FROM job_postings_fact WHERE job_title_short = 'Data Analyst'), 1) AS pct_of_postings,
+    COUNT(job_postings_fact.salary_year_avg) AS postings_with_salary,
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY job_postings_fact.salary_year_avg)::numeric, 0) AS median_salary
+FROM
+    job_postings_fact
+INNER JOIN skills_job_dim
+    ON job_postings_fact.job_id = skills_job_dim.job_id
+INNER JOIN skills_dim
+    ON skills_job_dim.skill_id = skills_dim.skill_id
+WHERE
+    job_postings_fact.job_title_short = 'Data Analyst'
+GROUP BY
+    skills_dim.skills
+ORDER BY
+    demand_count DESC
+LIMIT 15;
 
-/* Insights
-1. SQL wins on demand again — this time under a different, independent filter. Comparing this to Question 1's "no degree required" list: both lists put SQL, Excel, Python, Tableau, and Power BI in the top 5, in almost the exact same order. That's a meaningful validation point for your write-up — two completely different definitions of "beginner-accessible" (no-degree-mentioned vs. non-senior-titled) converge on the same core skill set. That's a stronger, more credible finding than either list alone, since it's not an artifact of one particular filter choice.
-2. Excel has the lowest average salary among the top 5 ($84,441) despite being the #2 most in-demand skill.
-3. Python and Tableau pay noticeably more than SQL despite lower demand ($98,495 and $95,494 vs. SQL's $93,918).
-4. Word and PowerPoint cracking the top 10 is a bit of a surprise — a reminder that "Data Analyst" postings still expect basic office/communication tooling, not just technical skills.
-
-[
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "sql",
-    "demand_count": "2836",
-    "avg_salary": "93918"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "excel",
-    "demand_count": "2025",
-    "avg_salary": "84441"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "python",
-    "demand_count": "1652",
-    "avg_salary": "98495"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "tableau",
-    "demand_count": "1532",
-    "avg_salary": "95494"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "power bi",
-    "demand_count": "983",
-    "avg_salary": "90825"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "r",
-    "demand_count": "958",
-    "avg_salary": "95294"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "sas",
-    "demand_count": "874",
-    "avg_salary": "90476"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "word",
-    "demand_count": "501",
-    "avg_salary": "81379"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "powerpoint",
-    "demand_count": "489",
-    "avg_salary": "86023"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "sql server",
-    "demand_count": "309",
-    "avg_salary": "93730"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "oracle",
-    "demand_count": "293",
-    "avg_salary": "97363"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "azure",
-    "demand_count": "287",
-    "avg_salary": "103104"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "aws",
-    "demand_count": "258",
-    "avg_salary": "103769"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "go",
-    "demand_count": "258",
-    "avg_salary": "92288"
-  },
-  {
-    "job_title": "Data Analyst",
-    "skill_name": "flow",
-    "demand_count": "245",
-    "avg_salary": "96086"
-  }
-] */
+/* Notes (results run 2026-10-30):
+1. Bug fixed: demand_count used to count only postings with a salary (SQL was 2,836).
+   It now counts all entry-level postings (SQL: 83,567). Salary columns still use only postings with a salary.
+2. The seniority filter keeps 179,589 of 196,593 Data Analyst postings (91.4%) and removes 17,004.
+   Whole-word matching is used because plain ILIKE '%...%' removed titles like "CSR Data Analyst",
+   "Staffordshire", "Headquartered" and "Money Market Directories".
+   Compared with the old filter (senior/lead/principal/staff), the new words remove 8,157 more postings:
+   manager 4,680, sr 2,625, director 575, head 303.
+3. Entry-level top 5 by % of postings: SQL 46.5%, Excel 34.8%, Python 28.7%, Tableau 23.1%, Power BI 20.2%.
+4. Baseline (all Data Analyst postings, no filter) has the same top 15 in the same order
+   (SQL 47.1%, Excel 34.1%, Python 29.2%, Tableau 23.7%, Power BI 20.1%).
+   The no-degree list in query-1 has the same top 5. These are the core Data Analyst skills,
+   not something special to beginners. Entry-level postings are 91.4% of the total, so the filter changes little.
+5. Median salary in entry-level postings (all top 15 have at least 30 postings with salary):
+   highest: AWS $100,000 (n=236), Azure $98,038 (n=261), Python $95,000 (n=1,556)
+   lowest:  Word $76,650 (n=467), Excel $80,850 (n=1,920), PowerPoint $81,682 (n=455)
+   SQL and Tableau are both $90,000 (n=2,659 and n=1,421).
+6. "go" is likely noisy: the tag can come from the plain word "go" in posting text.
+*/
