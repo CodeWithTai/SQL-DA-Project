@@ -8,7 +8,7 @@ where should I start?
 
 ## Dataset
 
-Built on the open [`data_jobs`](https://github.com/lukebarousse/data_jobs) dataset
+Built on the open [`data_jobs`](https://huggingface.co/datasets/lukebarousse/data_jobs) dataset
 (job postings scraped from Google Jobs), loaded into a local PostgreSQL database.
 The analysis covers the 196,593 postings with `job_title_short = 'Data Analyst'`.
 
@@ -210,9 +210,11 @@ another analysis, not a result of this one.
   one final combined output within a single statement (e.g. `query-final.sql`,
   which builds an entry-level job set, then aggregates skill demand/salary
   against it).
-- **Skill pairing** (`query-4.sql`) used a self-join on `skills_job_dim` with a
-  `skill_id_a < skill_id_b` condition so each unique pair is counted once,
-  rather than twice or paired with itself.
+- **Skill pairing** (`query-4.sql`) first builds one row per posting and skill
+  *name* (`SELECT DISTINCT`), then self-joins it with a `skill_a < skill_b`
+  condition so each unique pair is counted once, rather than twice or paired
+  with itself. Pairing by name instead of `skill_id` matters because the same
+  name can appear under more than one `skill_id` in `skills_dim`.
 - All queries scoped to `job_title_short = 'Data Analyst'` for consistency
   across the whole project.
 
@@ -259,15 +261,16 @@ another analysis, not a result of this one.
 - Why NULL comparisons return *unknown* rather than false, and how that quietly
   changes what a filter actually includes
 - `INNER JOIN` vs. `LEFT JOIN` as a real decision, not interchangeable syntax —
-  `LEFT JOIN` when the zero case still needs to show up (companies with no
-  postings), `INNER JOIN` when a match is always guaranteed (skill IDs that
-  already reference real skills)
+  `LEFT JOIN` when the row on the left must stay even without a match (a
+  posting whose company is missing from `company_dim`), `INNER JOIN` when a
+  match is required (skill IDs that already reference real skills)
 - CTEs vs. subqueries vs. temp tables as three different tools for three
   different situations, not three ways to write the same thing — CTEs for
   combining pieces within one statement, temp tables for reusing a filtered
   set across several separate statements
-- A self-join with a `skill_id_a < skill_id_b` condition to count each unique
-  skill pair exactly once instead of twice
+- A self-join with a `skill_a < skill_b` condition to count each unique
+  skill pair exactly once instead of twice, and why a join that looks unique by
+  ID can still repeat a name (so deduplicate with `DISTINCT` before counting)
 - Date functions like `EXTRACT()`, and how time zone conversion can shift
   which day or month a timestamp actually falls into
 - `CASE` statements to turn raw numbers into labeled categories

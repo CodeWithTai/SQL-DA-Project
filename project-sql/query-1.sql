@@ -47,12 +47,12 @@ GROUP BY job_title_short, job_title
 ORDER BY posting_count DESC
 LIMIT 10;
 
--- Top requested skills
+-- Top requested skills (DISTINCT: one skill name can sit under several skill_ids in skills_dim)
 SELECT
     no_degree_da_jobs.job_title_short,
     skills_dim.skills AS skill_name,
-    COUNT(skills_job_dim.job_id) AS skill_count,
-    ROUND(COUNT(skills_job_dim.job_id) * 100.0 / (SELECT COUNT(*) FROM no_degree_da_jobs), 1) AS pct_of_postings
+    COUNT(DISTINCT skills_job_dim.job_id) AS skill_count,
+    ROUND(COUNT(DISTINCT skills_job_dim.job_id) * 100.0 / (SELECT COUNT(*) FROM no_degree_da_jobs), 1) AS pct_of_postings
 FROM no_degree_da_jobs
 INNER JOIN skills_job_dim ON no_degree_da_jobs.job_id = skills_job_dim.job_id
 INNER JOIN skills_dim ON skills_job_dim.skill_id = skills_dim.skill_id

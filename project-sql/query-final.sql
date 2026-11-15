@@ -18,7 +18,9 @@ GROUP BY
 ORDER BY
     postings_excluded DESC;
 
--- Entry-level skills: demand counts ALL entry-level postings, salary stats use only postings with a salary
+-- Entry-level skills: demand counts ALL entry-level postings, salary stats use only postings with a salary.
+-- entry_level_skills has one row per (posting, skill NAME): skills_dim can hold the same name under more than
+-- one skill_id, which would otherwise count a posting twice for that skill and double its salary in the median.
 WITH entry_level_postings AS (
     SELECT
         job_id,
@@ -31,23 +33,33 @@ WITH entry_level_postings AS (
         AND job_title !~* '\m(senior|sr|lead|leader|teamlead|principal|staff|manager|head|director)\M'
 ),
 
-skill_stats AS (
-    SELECT
-        entry_level_postings.job_title_short,
-        skills_dim.skills AS skill_name,
-        COUNT(skills_job_dim.job_id) AS demand_count,
-        COUNT(entry_level_postings.salary_year_avg) AS postings_with_salary,
-        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY entry_level_postings.salary_year_avg)::numeric, 0) AS median_salary,
-        ROUND(AVG(entry_level_postings.salary_year_avg), 0) AS avg_salary
+entry_level_skills AS (
+    SELECT DISTINCT
+        entry_level_postings.job_id,
+        skills_dim.skills AS skill_name
     FROM
         entry_level_postings
     INNER JOIN skills_job_dim
         ON entry_level_postings.job_id = skills_job_dim.job_id
     INNER JOIN skills_dim
         ON skills_job_dim.skill_id = skills_dim.skill_id
+),
+
+skill_stats AS (
+    SELECT
+        entry_level_postings.job_title_short,
+        entry_level_skills.skill_name,
+        COUNT(*) AS demand_count,
+        COUNT(entry_level_postings.salary_year_avg) AS postings_with_salary,
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY entry_level_postings.salary_year_avg)::numeric, 0) AS median_salary,
+        ROUND(AVG(entry_level_postings.salary_year_avg), 0) AS avg_salary
+    FROM
+        entry_level_skills
+    INNER JOIN entry_level_postings
+        ON entry_level_skills.job_id = entry_level_postings.job_id
     GROUP BY
         entry_level_postings.job_title_short,
-        skills_dim.skills
+        entry_level_skills.skill_name
 )
 
 SELECT
@@ -66,22 +78,40 @@ ORDER BY
 LIMIT 15;
 
 -- Baseline: top 15 skills for ALL Data Analyst postings (no filter)
+WITH da_postings AS (
+    SELECT
+        job_id,
+        salary_year_avg
+    FROM
+        job_postings_fact
+    WHERE
+        job_title_short = 'Data Analyst'
+),
+
+da_skills AS (
+    SELECT DISTINCT
+        da_postings.job_id,
+        skills_dim.skills AS skill_name
+    FROM
+        da_postings
+    INNER JOIN skills_job_dim
+        ON da_postings.job_id = skills_job_dim.job_id
+    INNER JOIN skills_dim
+        ON skills_job_dim.skill_id = skills_dim.skill_id
+)
+
 SELECT
-    skills_dim.skills AS skill_name,
-    COUNT(skills_job_dim.job_id) AS demand_count,
-    ROUND(COUNT(skills_job_dim.job_id) * 100.0 / (SELECT COUNT(*) FROM job_postings_fact WHERE job_title_short = 'Data Analyst'), 1) AS pct_of_postings,
-    COUNT(job_postings_fact.salary_year_avg) AS postings_with_salary,
-    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY job_postings_fact.salary_year_avg)::numeric, 0) AS median_salary
+    da_skills.skill_name,
+    COUNT(*) AS demand_count,
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM da_postings), 1) AS pct_of_postings,
+    COUNT(da_postings.salary_year_avg) AS postings_with_salary,
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY da_postings.salary_year_avg)::numeric, 0) AS median_salary
 FROM
-    job_postings_fact
-INNER JOIN skills_job_dim
-    ON job_postings_fact.job_id = skills_job_dim.job_id
-INNER JOIN skills_dim
-    ON skills_job_dim.skill_id = skills_dim.skill_id
-WHERE
-    job_postings_fact.job_title_short = 'Data Analyst'
+    da_skills
+INNER JOIN da_postings
+    ON da_skills.job_id = da_postings.job_id
 GROUP BY
-    skills_dim.skills
+    da_skills.skill_name
 ORDER BY
     demand_count DESC
 LIMIT 15;
